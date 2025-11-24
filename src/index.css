@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CSS de Impressão (Compatível com Tailwind) */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #area-impressao, #area-impressao * {
+    visibility: visible;
+  }
+  #area-impressao {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    color: black;
+  }
+  @page { margin: 0; }
+}
