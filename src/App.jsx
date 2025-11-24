@@ -1,31 +1,47 @@
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable no-undef */
+ 
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Printer, MapPin, User, CheckCircle, Utensils, 
-  Plus, Trash2, Package, ClipboardList, Pencil, Settings, Bike, MessageCircle, Map, DollarSign, History, Users, Calendar, CreditCard, Box, Ban, RotateCcw, FileText, List, Clock, GripVertical, Link, Percent, X, MessageSquare, Layers, Image, AlignLeft 
+  Plus, Trash2, Package, ClipboardList, Pencil, Settings, Bike, MessageCircle, Map, DollarSign, History, Users, Calendar, CreditCard, Box, Ban, RotateCcw, FileText, List, Clock, GripVertical, Link, Percent, X, MessageSquare 
 } from 'lucide-react';
 import { supabase } from './supabase';
 
-// ... (O componente PedidoTimer continua igual, omiti para economizar espaço, mas mantenha ele lá)
+// --- COMPONENTE DE TIMER ---
 const PedidoTimer = ({ timestampInicial, minutosPrevistos }) => {
   const [tempoRestante, setTempoRestante] = useState('--:--');
   const [estilo, setEstilo] = useState('text-gray-500 bg-gray-100');
+
   useEffect(() => {
     const calcular = () => {
-      if (!timestampInicial) { setTempoRestante('--:--'); return; }
-      const inicio = new Date(timestampInicial).getTime();
-      if (isNaN(inicio) || !minutosPrevistos) return;
+      if (!timestampInicial || isNaN(Number(timestampInicial)) || !minutosPrevistos) {
+        setTempoRestante('--:--');
+        return;
+      }
       const agora = Date.now();
       const tempoTotalMs = Number(minutosPrevistos) * 60 * 1000;
-      const horaFinal = inicio + tempoTotalMs;
+      const horaFinal = Number(timestampInicial) + tempoTotalMs;
       const diferenca = horaFinal - agora;
-      if (diferenca <= 0) { setTempoRestante(`ATRASADO ${Math.abs(Math.floor(diferenca / 60000))}min`); setEstilo('text-white bg-red-600 animate-pulse font-bold'); return; }
+
+      if (diferenca <= 0) {
+        setTempoRestante(`ATRASADO ${Math.abs(Math.floor(diferenca / 60000))}min`);
+        setEstilo('text-white bg-red-600 animate-pulse font-bold');
+        return;
+      }
       const minutos = Math.floor((diferenca % (1000 * 60 * 60)) / (1000 * 60));
       const segundos = Math.floor((diferenca % (1000 * 60)) / 1000);
       setTempoRestante(`${minutos}m ${segundos}s`);
-      if (minutos < 5) setEstilo('text-red-600 bg-red-50 font-bold'); else if (minutos < 15) setEstilo('text-orange-600 bg-orange-50'); else setEstilo('text-green-600 bg-green-50');
+
+      if (minutos < 5) setEstilo('text-red-600 bg-red-50 font-bold');
+      else if (minutos < 15) setEstilo('text-orange-600 bg-orange-50');
+      else setEstilo('text-green-600 bg-green-50');
     };
-    const intervalo = setInterval(calcular, 1000); calcular(); return () => clearInterval(intervalo);
+    const intervalo = setInterval(calcular, 1000);
+    calcular(); 
+    return () => clearInterval(intervalo);
   }, [timestampInicial, minutosPrevistos]);
+
   return (<div className={`px-2 py-1 rounded flex items-center gap-1 text-xs border border-current ${estilo}`}><Clock size={12} /><span>{tempoRestante}</span></div>);
 };
 
@@ -33,158 +49,307 @@ function App() {
   const [abaAtiva, setAbaAtiva] = useState('pedidos'); 
   const [modalAberto, setModalAberto] = useState(false);
   const [tipoCadastro, setTipoCadastro] = useState('lanches');
-  const [modoPedido, setModoPedido] = useState('cardapio'); 
   
   const dragItem = useRef();
   const dragOverItem = useRef();
 
   // --- UTILITÁRIOS ---
   const getDataHoje = () => new Date().toISOString().split('T')[0];
-  const formatarDataBR = (dataISO) => { if(!dataISO) return '-'; const dataLimpa = dataISO.split('T')[0]; const partes = dataLimpa.split('-'); if(partes.length !== 3) return dataISO; return `${partes[2]}/${partes[1]}/${partes[0]}`; };
-  const carregarDados = (chave, padrao) => { try { const salvo = localStorage.getItem(chave); if (!salvo) return padrao; const dados = JSON.parse(salvo); if (Array.isArray(padrao) && !Array.isArray(dados)) return padrao; return dados; } catch { return padrao; } };
-  const extrairValorOpcao = (textoOpcao) => { if (!textoOpcao || typeof textoOpcao !== 'string' || !textoOpcao.includes('=+')) return 0; const partes = textoOpcao.split('=+'); return parseFloat(partes[1]) || 0; };
-  const extrairNomeOpcao = (textoOpcao) => { if (!textoOpcao || typeof textoOpcao !== 'string') return ''; return textoOpcao.split('=+')[0].trim(); };
+  
+  const formatarDataBR = (dataISO) => {
+    if(!dataISO || typeof dataISO !== 'string') return '-';
+    const partes = dataISO.split('-');
+    if(partes.length !== 3) return dataISO;
+    return `${partes[2]}/${partes[1]}/${partes[0]}`;
+  };
+  
+  const carregarDados = (chave, padrao) => {
+    try {
+      const salvo = localStorage.getItem(chave);
+      if (!salvo) return padrao;
+      const dados = JSON.parse(salvo);
+      if (Array.isArray(padrao) && !Array.isArray(dados)) return padrao;
+      return dados;
+    } catch {
+      return padrao; 
+    }
+  };
+
+  const extrairValorOpcao = (textoOpcao) => {
+    if (!textoOpcao || typeof textoOpcao !== 'string' || !textoOpcao.includes('=+')) return 0;
+    const partes = textoOpcao.split('=+');
+    return parseFloat(partes[1]) || 0;
+  };
+  const extrairNomeOpcao = (textoOpcao) => {
+    if (!textoOpcao || typeof textoOpcao !== 'string') return '';
+    return textoOpcao.split('=+')[0].trim();
+  };
 
   // --- ESTADOS ---
   const [taxasFrete, setTaxasFrete] = useState([]);
-  const [configTempos, setConfigTempos] = useState(() => carregarDados('bestdog_tempos', { preparo: 25, deslocamento: 15 }));
+  const [configTempos] = useState(() => carregarDados('bestdog_tempos', { preparo: 25, deslocamento: 15 }));
   const [produtos, setProdutos] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [pedidos, setPedidos] = useState([]);
   const [filtroData, setFiltroData] = useState(getDataHoje());
-  const [montagem, setMontagem] = useState({ pao: null, proteina: null, recheios: [] });
 
   // --- BUSCAS NO BANCO ---
-  async function buscarDados() { await Promise.all([buscarTaxas(), buscarProdutos(), buscarClientes(), buscarPedidos()]); }
-  async function buscarTaxas() { const { data } = await supabase.from('taxas').select('*').order('valor', { ascending: true }); if (data) setTaxasFrete(data); }
-  async function buscarProdutos() { const { data } = await supabase.from('produtos').select('*').order('nome', { ascending: true }); if (data) setProdutos(data); }
-  async function buscarClientes() { const { data } = await supabase.from('clientes').select('*').order('nome', { ascending: true }); if (data) setClientes(data); }
-  async function buscarPedidos() { const { data } = await supabase.from('pedidos').select('*').order('created_at', { ascending: false }); if (data) setPedidos(data); }
+  async function buscarDados() {
+    await Promise.all([buscarTaxas(), buscarProdutos(), buscarClientes(), buscarPedidos()]);
+  }
+  async function buscarTaxas() {
+    const { data } = await supabase.from('taxas').select('*').order('valor', { ascending: true });
+    if (data) setTaxasFrete(data);
+  }
+  async function buscarProdutos() {
+    const { data } = await supabase.from('produtos').select('*').order('nome', { ascending: true });
+    if (data) setProdutos(data);
+  }
+  async function buscarClientes() {
+    const { data } = await supabase.from('clientes').select('*').order('nome', { ascending: true });
+    if (data) setClientes(data);
+  }
+  async function buscarPedidos() {
+    const { data } = await supabase.from('pedidos').select('*').order('created_at', { ascending: false });
+    if (data) setPedidos(data);
+  }
 
-  useEffect(() => { buscarDados(); const subscription = supabase.channel('public:geral').on('postgres_changes', { event: '*', schema: 'public', table: 'pedidos' }, () => buscarPedidos()).subscribe(); return () => { supabase.removeChannel(subscription); }; }, []);
+  useEffect(() => {
+    buscarDados();
+    const subscription = supabase.channel('public:geral').on('postgres_changes', { event: '*', schema: 'public', table: 'pedidos' }, () => buscarPedidos()).subscribe();
+    return () => { supabase.removeChannel(subscription); };
+  }, [buscarDados]);
+
   useEffect(() => { localStorage.setItem('bestdog_tempos', JSON.stringify(configTempos)); }, [configTempos]);
 
   // --- FORMULÁRIOS ---
-  const [formPedido, setFormPedido] = useState({ id: null, nome: '', endereco: '', telefone: '', taxaEntrega: 0, pagamento: 'Dinheiro', observacoes: '', desconto: 0, tempoPreparo: 0, tempoDeslocamento: 0, itens: [{ produtoId: '', nome: '', qtd: 1, preco: 0, opcaoSelecionada: '', listaAdicionais: [] }] });
+  const [formPedido, setFormPedido] = useState({
+    id: null, nome: '', endereco: '', telefone: '', taxaEntrega: 0, pagamento: 'Dinheiro', observacoes: '', 
+    desconto: 0, tempoPreparo: 0, tempoDeslocamento: 0,
+    itens: [{ produtoId: '', nome: '', qtd: 1, preco: 0, opcaoSelecionada: '', listaAdicionais: [] }] 
+  });
   
-  // NOVO PRODUTO COM CAMPOS EXTRAS
   const [novoProduto, setNovoProduto] = useState({ 
-    nome: '', preco: '', estoque: '', opcoes: '', tipo: 'principal', categoria: 'Lanches', idsAdicionaisPermitidos: [],
-    imagem_url: '', descricao: '' 
+    nome: '', preco: '', estoque: '', opcoes: '', tipo: 'principal', categoria: 'Lanches', idsAdicionaisPermitidos: [], imagem_url: '', descricao: ''
   });
   
   const [novaTaxa, setNovaTaxa] = useState({ nome: '', valor: '' });
   const [novoCliente, setNovoCliente] = useState({ nome: '', telefone: '', endereco: '', taxaFixa: '' });
 
-  // --- IMPRESSÃO E LÓGICA DE PEDIDOS (MANTIDOS IGUAIS, OMITINDO PARA FOCAR NA MUDANÇA) ---
-  // ... (Pode manter as funções imprimirComanda, calcularTotalGeral, salvarPedido, concluirPedido, cancelarPedido, registrarDevolucao, resetarSistema, salvarCliente, deletarCliente, salvarTaxa, deletarTaxa, atualizarTaxaNaLista do código anterior)
-  // Vou replicar apenas as partes essenciais e as alteradas abaixo:
-
+  // --- HELPERS ---
   const abrirNoMaps = (endereco) => { window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(endereco)}`, '_blank'); };
-  const enviarParaMotoboy = (pedido) => { const linkMap = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pedido.cliente.endereco)}`; const texto = `🛵 *ENTREGA #${pedido.id}*\n👤 ${pedido.cliente.nome}\n📍 ${pedido.cliente.endereco}\n💳 Pgto: ${pedido.pagamento}\n💰 Cobrar: R$ ${Number(pedido.total).toFixed(2)}\n\n🗺️ Mapa: ${linkMap}`; window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, '_blank'); };
-  const enviarParaCliente = (pedido) => { const resumoItens = (pedido.itens || []).map(item => { let desc = `${item.qtd}x ${item.nome}`; if (item.isMontado) { desc += `\n    (Montado: ${item.detalhesMontagem})`; } else { const nomeOpcao = extrairNomeOpcao(item.opcaoSelecionada); if (nomeOpcao) desc += ` (${nomeOpcao})`; const listaAdics = (item.listaAdicionais || []).map(id => produtos.find(p => p.id === id)?.nome).filter(Boolean); if (listaAdics.length > 0) desc += `\n   + ${listaAdics.join(', ')}`; } return desc; }).join('\n'); const clienteTel = pedido.cliente?.telefone || ''; const texto = `Olá *${pedido.cliente.nome}*! Seu pedido foi confirmado! 🌭\n\n*Resumo do Pedido #${pedido.id}:*\n${resumoItens}\n\n📍 *Entrega em:* ${pedido.cliente.endereco}\n💰 *Total:* R$ ${Number(pedido.total).toFixed(2)}\n💳 *Pagamento:* ${pedido.pagamento}\n\nObrigado!`; window.open(`https://wa.me/${clienteTel ? '55'+clienteTel.replace(/\D/g,'') : ''}?text=${encodeURIComponent(texto)}`, '_blank'); };
-  const calcularTotalGeral = (itens, entrega, descontoPercent) => { if (!itens || !Array.isArray(itens)) return 0; const subtotal = itens.reduce((acc, item) => { if(item.isMontado) { return acc + (Number(item.preco) * Number(item.qtd)); } const precoBase = Number(item.preco) || 0; const listaAdics = item.listaAdicionais || []; const precoAdicionais = listaAdics.reduce((sum, adId) => { const prod = produtos.find(p => p.id === adId); return sum + (prod ? Number(prod.preco) : 0); }, 0); const precoOpcao = extrairValorOpcao(item.opcaoSelecionada); return acc + ((precoBase + precoAdicionais + precoOpcao) * (Number(item.qtd) || 1)); }, 0); const valorDesconto = subtotal * (Number(descontoPercent || 0) / 100); return (subtotal - valorDesconto) + (Number(entrega) || 0); };
+  
+  const enviarParaMotoboy = (pedido) => {
+    const linkMap = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pedido.cliente.endereco)}`;
+    const texto = `🛵 *ENTREGA #${pedido.id}*\n👤 ${pedido.cliente.nome}\n📍 ${pedido.cliente.endereco}\n💳 Pgto: ${pedido.pagamento}\n💰 Cobrar: R$ ${Number(pedido.total).toFixed(2)}\n\n🗺️ Mapa: ${linkMap}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, '_blank');
+  };
 
-  // FUNÇÕES DE SALVAMENTO E ATUALIZAÇÃO
-  const salvarPedido = async (e) => { e.preventDefault(); const totalFinal = calcularTotalGeral(formPedido.itens, formPedido.taxaEntrega, formPedido.desconto); const existingPedido = formPedido.id ? pedidos.find(p => p.id === formPedido.id) : null; const pedidoFormatado = { cliente: { nome: formPedido.nome, endereco: formPedido.endereco, telefone: formPedido.telefone }, itens: formPedido.itens, taxa_entrega: Number(formPedido.taxaEntrega), desconto: Number(formPedido.desconto), pagamento: formPedido.pagamento, observacoes: formPedido.observacoes, total: totalFinal, data: existingPedido ? existingPedido.data : getDataHoje(), hora: existingPedido ? existingPedido.hora : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), status: existingPedido ? existingPedido.status : "Pendente", created_at: existingPedido ? existingPedido.created_at : new Date().toISOString() }; if (formPedido.id) { const { error } = await supabase.from('pedidos').update(pedidoFormatado).eq('id', formPedido.id); if (!error) { setPedidos(pedidos.map(p => p.id === formPedido.id ? { ...p, ...pedidoFormatado } : p)); setModalAberto(false); } } else { const { data, error } = await supabase.from('pedidos').insert([pedidoFormatado]).select(); if (!error && data) { setPedidos([data[0], ...pedidos]); setModalAberto(false); } } };
-  const atualizarStatusPedido = async (id, novoStatus) => { const { error } = await supabase.from('pedidos').update({ status: novoStatus }).eq('id', id); if (!error) setPedidos(pedidos.map(p => p.id === id ? { ...p, status: novoStatus } : p)); };
+  const enviarParaCliente = (pedido) => {
+    const resumoItens = (pedido.itens || []).map(item => {
+      let desc = `${item.qtd}x ${item.nome}`;
+      const nomeOpcao = extrairNomeOpcao(item.opcaoSelecionada);
+      if (nomeOpcao) desc += ` (${nomeOpcao})`;
+      const listaAdics = (item.listaAdicionais || []).map(id => produtos.find(p => p.id === id)?.nome).filter(Boolean);
+      if (listaAdics.length > 0) desc += `\n   + ${listaAdics.join(', ')}`;
+      return desc;
+    }).join('\n');
+    
+    const clienteTel = pedido.cliente?.telefone || '';
+    const texto = `Olá *${pedido.cliente.nome}*! Seu pedido foi confirmado! 🌭\n\n*Resumo do Pedido #${pedido.id}:*\n${resumoItens}\n\n📍 *Entrega em:* ${pedido.cliente.endereco}\n💰 *Total:* R$ ${Number(pedido.total).toFixed(2)}\n💳 *Pagamento:* ${pedido.pagamento}\n\nObrigado!`;
+    window.open(`https://wa.me/${clienteTel ? '55'+clienteTel.replace(/\D/g,'') : ''}?text=${encodeURIComponent(texto)}`, '_blank');
+  };
+
+  // --- IMPRESSÃO ---
+  const imprimirComanda = (pedido) => {
+    const itensSeguros = pedido.itens || [];
+    
+    const subtotalItens = itensSeguros.reduce((acc, item) => {
+      const precoBase = Number(item.preco) || 0;
+      const listaAdics = item.listaAdicionais || [];
+      const totalAdics = listaAdics.reduce((sum, adId) => {
+        const prod = produtos.find(p => p.id === adId);
+        return sum + (prod ? Number(prod.preco) : 0);
+      }, 0);
+      const precoOpcao = extrairValorOpcao(item.opcaoSelecionada);
+      return acc + ((precoBase + totalAdics + precoOpcao) * (Number(item.qtd) || 1));
+    }, 0);
+
+    const valorDesconto = subtotalItens * ((Number(pedido.desconto) || 0) / 100);
+
+    const htmlItens = itensSeguros.map(item => {
+        const listaAdics = item.listaAdicionais || [];
+        const adics = listaAdics.map(id => produtos.find(p => p.id === id)).filter(Boolean);
+        const htmlAdics = adics.map(a => `<div>+ ${a.nome}</div>`).join('');
+        const valorOpcao = extrairValorOpcao(item.opcaoSelecionada);
+        const nomeOpcao = extrairNomeOpcao(item.opcaoSelecionada);
+        const totalAdics = adics.reduce((sum, a) => sum + Number(a.preco), 0);
+        const totalItem = (Number(item.preco) + totalAdics + valorOpcao).toFixed(2);
+
+        return `
+            <tr style="border-bottom: 2px dashed #000;">
+                <td style="padding: 10px 0; font-weight:900; font-size: 24px; vertical-align: top; width: 35px;">${item.qtd}x</td>
+                <td style="padding: 10px 0; font-size: 18px; font-weight: 800; line-height: 1.2;">
+                    ${item.nome.toUpperCase()}
+                    ${nomeOpcao ? `<div style="font-weight: normal; font-size: 18px;">[${nomeOpcao}]</div>` : ''}
+                    <div style="font-size:16px; margin-top:5px; font-weight: normal;">${htmlAdics}</div>
+                </td>
+                <td style="padding: 10px 0; text-align: right; font-size: 20px; font-weight: 900; vertical-align: top;">${totalItem}</td>
+            </tr>
+        `;
+    }).join('');
+
+    const htmlDesconto = pedido.desconto > 0 
+        ? `<div style="display:flex; justify-content:space-between; font-size: 18px; margin: 5px 0;"><span>Desconto (${pedido.desconto}%)</span><span>- R$ ${valorDesconto.toFixed(2)}</span></div>` 
+        : '';
+
+    const obsHtml = pedido.observacoes 
+        ? `<div style="margin: 20px 0; border: 3px solid #000; padding: 10px; font-weight: 900; font-size: 20px; text-align: center; text-transform: uppercase; background: #eee;">OBS: ${pedido.observacoes.toUpperCase()}</div>` 
+        : '';
+
+    const conteudo = `
+      <html>
+        <head>
+          <title>Pedido #${pedido.id}</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            @page { margin: 0; size: 80mm auto; }
+            body { width: 100%; max-width: 80mm; margin: 0 auto; padding: 5px; font-family: 'Courier New', monospace; color: #000; font-weight: bold; }
+            * { box-sizing: border-box; }
+            .center { text-align: center; }
+            .title { font-size: 32px; font-weight: 900; display: block; text-align: center; margin-bottom: 5px; }
+            .subtitle { font-size: 24px; font-weight: 900; display: block; text-align: center; }
+            .info { font-size: 16px; display: block; text-align: center; }
+            .line { border-bottom: 3px dashed #000; margin: 15px 0; }
+            table { width: 100%; border-collapse: collapse; }
+            .client-info { font-size: 20px; line-height: 1.4; }
+            .client-name { font-size: 26px; font-weight: 900; display: block; }
+            .totals { font-size: 18px; line-height: 1.6; font-weight: bold; }
+            .total-final { font-size: 36px; font-weight: 900; text-align: right; margin-top: 15px; border-top: 4px solid #000; padding-top: 10px; }
+          </style>
+        </head>
+        <body>
+          <div class="center">
+            <span class="title">BEST DOG</span>
+            <span class="subtitle">PEDIDO #${pedido.id}</span>
+            <span class="info">${formatarDataBR(pedido.data)} - ${pedido.hora}</span>
+          </div>
+          <div class="line"></div>
+          <div class="client-info">
+            <span class="client-name">${pedido.cliente.nome ? pedido.cliente.nome.toUpperCase() : 'CLIENTE'}</span>
+            <div>${pedido.cliente.endereco}</div>
+            <div>${pedido.cliente.telefone ? pedido.cliente.telefone : ''}</div>
+          </div>
+          <div class="line"></div>
+          <table><tbody>${htmlItens}</tbody></table>
+          ${obsHtml}
+          <div class="line"></div>
+          <div class="totals">
+            <div style="display:flex; justify-content:space-between;"><span>Subtotal</span><span>R$ ${subtotalItens.toFixed(2)}</span></div>
+            ${htmlDesconto}
+            <div style="display:flex; justify-content:space-between;"><span>Taxa Entrega</span><span>R$ ${Number(pedido.taxa_entrega).toFixed(2)}</span></div>
+            <div style="display:flex; justify-content:space-between; margin-top:10px;"><span>Pagamento:</span><span>${pedido.pagamento}</span></div>
+          </div>
+          <div class="total-final">TOTAL: R$ ${Number(pedido.total).toFixed(2)}</div>
+          <br/><br/><div class="center info">*** Obrigado pela preferência! ***</div><br/>
+        </body>
+      </html>
+    `;
+    
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed'; iframe.style.left = '-9999px'; iframe.style.top = '0px'; iframe.style.width = '1px'; iframe.style.height = '1px'; iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+    const doc = iframe.contentWindow.document;
+    doc.open(); doc.write(conteudo); doc.close();
+    iframe.contentWindow.onload = () => {
+        setTimeout(() => {
+            iframe.contentWindow.focus(); iframe.contentWindow.print();
+            setTimeout(() => { if (document.body.contains(iframe)) { document.body.removeChild(iframe); } }, 3000);
+        }, 500);
+    };
+  };
+
+  // --- CÁLCULO ---
+  const calcularTotalGeral = (itens, entrega, descontoPercent) => {
+    if (!itens || !Array.isArray(itens)) return 0;
+    const subtotal = itens.reduce((acc, item) => {
+      const precoBase = Number(item.preco) || 0;
+      const listaAdics = item.listaAdicionais || [];
+      const precoAdicionais = listaAdics.reduce((sum, adId) => {
+        const prod = produtos.find(p => p.id === adId);
+        return sum + (prod ? Number(prod.preco) : 0);
+      }, 0);
+      const precoOpcao = extrairValorOpcao(item.opcaoSelecionada);
+      return acc + ((precoBase + precoAdicionais + precoOpcao) * (Number(item.qtd) || 1));
+    }, 0);
+
+    const valorDesconto = subtotal * (Number(descontoPercent || 0) / 100);
+    return (subtotal - valorDesconto) + (Number(entrega) || 0);
+  };
+
+  // --- ACTIONS ---
+  const salvarPedido = async (e) => {
+    e.preventDefault();
+    const totalFinal = calcularTotalGeral(formPedido.itens, formPedido.taxaEntrega, formPedido.desconto);
+    const existingPedido = formPedido.id ? pedidos.find(p => p.id === formPedido.id) : null;
+    const pedidoFormatado = {
+      cliente: { nome: formPedido.nome, endereco: formPedido.endereco, telefone: formPedido.telefone },
+      itens: formPedido.itens,
+      taxa_entrega: Number(formPedido.taxaEntrega),
+      desconto: Number(formPedido.desconto),
+      pagamento: formPedido.pagamento,
+      observacoes: formPedido.observacoes,
+      total: totalFinal,
+      data: existingPedido ? existingPedido.data : getDataHoje(), 
+      hora: existingPedido ? existingPedido.hora : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      status: existingPedido ? existingPedido.status : "Pendente",
+      created_at: existingPedido ? existingPedido.created_at : new Date().toISOString()
+    };
+    if (formPedido.id) {
+      const { error } = await supabase.from('pedidos').update(pedidoFormatado).eq('id', formPedido.id);
+      if (!error) { setPedidos(pedidos.map(p => p.id === formPedido.id ? { ...p, ...pedidoFormatado } : p)); setModalAberto(false); }
+    } else {
+      const { data, error } = await supabase.from('pedidos').insert([pedidoFormatado]).select();
+      if (!error && data) { setPedidos([data[0], ...pedidos]); setModalAberto(false); }
+    }
+  };
+
+  const atualizarStatusPedido = async (id, novoStatus) => {
+    const { error } = await supabase.from('pedidos').update({ status: novoStatus }).eq('id', id);
+    if (!error) setPedidos(pedidos.map(p => p.id === id ? { ...p, status: novoStatus } : p));
+  };
+
+  // --- CRUD ---
   const salvarCliente = async (e) => { e.preventDefault(); if (!novoCliente.nome) return; const { data, error } = await supabase.from('clientes').insert([{ nome: novoCliente.nome, telefone: novoCliente.telefone, endereco: novoCliente.endereco, taxa_fixa: novoCliente.taxaFixa ? parseFloat(novoCliente.taxaFixa) : 0 }]).select(); if (!error && data) { setClientes([...clientes, data[0]]); setNovoCliente({ nome: '', telefone: '', endereco: '', taxaFixa: '' }); } };
   const deletarCliente = async (id) => { await supabase.from('clientes').delete().eq('id', id); setClientes(clientes.filter(c => c.id !== id)); };
   const salvarTaxa = async (e) => { e.preventDefault(); const { data, error } = await supabase.from('taxas').insert([{ nome: novaTaxa.nome, valor: parseFloat(novaTaxa.valor) }]).select(); if (!error && data) { setTaxasFrete([...taxasFrete, data[0]]); setNovaTaxa({ nome: '', valor: '' }); } };
   const deletarTaxa = async (id) => { await supabase.from('taxas').delete().eq('id', id); setTaxasFrete(taxasFrete.filter(t => t.id !== id)); };
   const atualizarTaxaNaLista = (id, campo, valor) => { setTaxasFrete(taxasFrete.map(t => t.id === id ? { ...t, [campo]: campo === 'valor' ? Number(valor) : valor } : t)); };
+  
+  const salvarProduto = async (e) => { e.preventDefault(); const prod = { nome: novoProduto.nome, preco: parseFloat(novoProduto.preco), estoque: parseInt(novoProduto.estoque || 0), opcoes: novoProduto.opcoes, tipo: novoProduto.tipo, categoria: novoProduto.categoria || 'Lanches', ids_adicionais_permitidos: novoProduto.idsAdicionaisPermitidos || [], imagem_url: novoProduto.imagem_url, descricao: novoProduto.descricao }; const { data, error } = await supabase.from('produtos').insert([prod]).select(); if (!error && data) { setProdutos([...produtos, data[0]]); setNovoProduto({ nome: '', preco: '', estoque: '', opcoes: '', tipo: 'principal', idsAdicionaisPermitidos: [], categoria: 'Lanches', imagem_url: '', descricao: '' }); } };
   const deletarProduto = async (id) => { if(confirm("Deletar?")) { await supabase.from('produtos').delete().eq('id', id); setProdutos(produtos.filter(p => p.id !== id)); }};
   const atualizarProduto = (id, campo, valor) => { setProdutos(produtos.map(p => { if (p.id === id) { const valorFinal = (campo === 'preco' || campo === 'estoque') ? (valor === '' ? '' : Number(valor)) : valor; return { ...p, [campo]: valorFinal }; } return p; })); };
-  const resetarSistema = () => { if(confirm("Resetar?")) { window.location.reload(); } }
-  
-  // IMPRESSÃO (In-Page) - Mantida igual
-  const imprimirComanda = (pedido) => {
-      // ... (Lógica de impressão mantida, para não estender demais o código aqui, use a do bloco anterior se necessário, mas ela está incluída implicitamente na estrutura)
-      // Reutilize a função imprimirComanda do código anterior, ela está perfeita.
-      // Para garantir que funcione, vou simplificar aqui chamando a função window.print() direta, 
-      // mas o ideal é usar a lógica de iframe do código anterior.
-      // VOU INSERIR A LÓGICA COMPLETA AQUI PARA GARANTIR:
-      
-    const itensSeguros = pedido.itens || [];
-    const subtotalItens = itensSeguros.reduce((acc, item) => {
-      if (item.isMontado) return acc + (Number(item.preco) * Number(item.qtd));
-      const precoBase = Number(item.preco) || 0;
-      const listaAdics = item.listaAdicionais || [];
-      const totalAdics = listaAdics.reduce((sum, adId) => { const prod = produtos.find(p => p.id === adId); return sum + (prod ? Number(prod.preco) : 0); }, 0);
-      const precoOpcao = extrairValorOpcao(item.opcaoSelecionada);
-      return acc + ((precoBase + totalAdics + precoOpcao) * (Number(item.qtd) || 1));
-    }, 0);
-    const valorDesconto = subtotalItens * ((Number(pedido.desconto) || 0) / 100);
-
-    const htmlItens = itensSeguros.map(item => {
-        if (item.isMontado) {
-            const totalItem = (Number(item.preco) * Number(item.qtd)).toFixed(2);
-            const detalhes = item.detalhesMontagem.replace(/, /g, '<br/>+ ');
-            return `<tr style="border-bottom: 2px dashed #000;"><td style="padding: 10px 0; font-weight:900; font-size: 24px; vertical-align: top; width: 35px;">${item.qtd}x</td><td style="padding: 10px 0; font-size: 18px; font-weight: 800; line-height: 1.2;">${item.nome.toUpperCase()}<div style="font-size:14px; font-weight:normal; margin-top:5px;">${detalhes}</div></td><td style="padding: 10px 0; text-align: right; font-size: 20px; font-weight: 900; vertical-align: top;">${totalItem}</td></tr>`;
-        } else {
-            const listaAdics = item.listaAdicionais || [];
-            const adics = listaAdics.map(id => produtos.find(p => p.id === id)).filter(Boolean);
-            const htmlAdics = adics.map(a => `<div>+ ${a.nome}</div>`).join('');
-            const valorOpcao = extrairValorOpcao(item.opcaoSelecionada);
-            const nomeOpcao = extrairNomeOpcao(item.opcaoSelecionada);
-            const totalAdics = adics.reduce((sum, a) => sum + Number(a.preco), 0);
-            const totalItem = (Number(item.preco) + totalAdics + valorOpcao).toFixed(2);
-            return `<tr style="border-bottom: 2px dashed #000;"><td style="padding: 10px 0; font-weight:900; font-size: 24px; vertical-align: top; width: 35px;">${item.qtd}x</td><td style="padding: 10px 0; font-size: 20px; font-weight: 800; line-height: 1.2;">${item.nome.toUpperCase()}${nomeOpcao ? `<div style="font-weight: normal; font-size: 18px;">[${nomeOpcao}]</div>` : ''}<div style="font-size:16px; margin-top:5px; font-weight: normal;">${htmlAdics}</div></td><td style="padding: 10px 0; text-align: right; font-size: 20px; font-weight: 900; vertical-align: top;">${totalItem}</td></tr>`;
-        }
-    }).join('');
-    const htmlDesconto = pedido.desconto > 0 ? `<div style="display:flex; justify-content:space-between; font-size: 18px; margin: 5px 0;"><span>Desconto (${pedido.desconto}%)</span><span>- R$ ${valorDesconto.toFixed(2)}</span></div>` : '';
-    const obsHtml = pedido.observacoes ? `<div style="margin: 20px 0; border: 3px solid #000; padding: 10px; font-weight: 900; font-size: 20px; text-align: center; text-transform: uppercase; background: #eee;">OBS: ${pedido.observacoes.toUpperCase()}</div>` : '';
-
-    const conteudo = `<html><head><title>Pedido #${pedido.id}</title><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>@page { margin: 0; size: 80mm auto; } body { width: 100%; max-width: 80mm; margin: 0 auto; padding: 5px; font-family: 'Courier New', monospace; color: #000; font-weight: bold; } * { box-sizing: border-box; } .center { text-align: center; } .title { font-size: 32px; font-weight: 900; display: block; text-align: center; margin-bottom: 5px; } .subtitle { font-size: 24px; font-weight: 900; display: block; text-align: center; } .info { font-size: 16px; display: block; text-align: center; } .line { border-bottom: 3px dashed #000; margin: 15px 0; } table { width: 100%; border-collapse: collapse; } .client-info { font-size: 20px; line-height: 1.4; } .client-name { font-size: 26px; font-weight: 900; display: block; } .totals { font-size: 18px; line-height: 1.6; font-weight: bold; } .total-final { font-size: 36px; font-weight: 900; text-align: right; margin-top: 15px; border-top: 4px solid #000; padding-top: 10px; }</style></head><body><div class="center"><span class="title">BEST DOG</span><span class="subtitle">PEDIDO #${pedido.id}</span><span class="info">${formatarDataBR(pedido.data)} - ${pedido.hora}</span></div><div class="line"></div><div class="client-info"><span class="client-name">${pedido.cliente.nome ? pedido.cliente.nome.toUpperCase() : 'CLIENTE'}</span><div>${pedido.cliente.endereco}</div><div>${pedido.cliente.telefone ? pedido.cliente.telefone : ''}</div></div><div class="line"></div><table><tbody>${htmlItens}</tbody></table>${obsHtml}<div class="line"></div><div class="totals"><div style="display:flex; justify-content:space-between;"><span>Subtotal</span><span>R$ ${subtotalItens.toFixed(2)}</span></div>${htmlDesconto}<div style="display:flex; justify-content:space-between;"><span>Taxa Entrega</span><span>R$ ${Number(pedido.taxa_entrega).toFixed(2)}</span></div><div style="display:flex; justify-content:space-between; margin-top:10px;"><span>Pagamento:</span><span>${pedido.pagamento}</span></div></div><div class="total-final">TOTAL: R$ ${Number(pedido.total).toFixed(2)}</div><br/><br/><div class="center info">*** Obrigado pela preferência! ***</div><br/></body></html>`;
-    const iframe = document.createElement('iframe'); iframe.style.position = 'fixed'; iframe.style.left = '-9999px'; iframe.style.top = '0px'; iframe.style.width = '1px'; iframe.style.height = '1px'; iframe.style.border = 'none'; document.body.appendChild(iframe); const doc = iframe.contentWindow.document; doc.open(); doc.write(conteudo); doc.close();
-    iframe.contentWindow.onload = () => { setTimeout(() => { iframe.contentWindow.focus(); iframe.contentWindow.print(); setTimeout(() => { if (document.body.contains(iframe)) { document.body.removeChild(iframe); } }, 3000); }, 500); };
-  };
-
-  // --- NOVO: SALVAR PRODUTO ATUALIZADO (IMAGEM/DESCRIÇÃO) ---
-  const salvarProduto = async (e) => {
-    e.preventDefault();
-    const prod = {
-      nome: novoProduto.nome,
-      preco: parseFloat(novoProduto.preco),
-      estoque: parseInt(novoProduto.estoque || 0),
-      opcoes: novoProduto.opcoes,
-      tipo: novoProduto.tipo,
-      categoria: novoProduto.categoria || 'Lanches',
-      ids_adicionais_permitidos: novoProduto.idsAdicionaisPermitidos || [],
-      // NOVOS CAMPOS
-      imagem_url: novoProduto.imagem_url,
-      descricao: novoProduto.descricao
-    };
-    const { data, error } = await supabase.from('produtos').insert([prod]).select();
-    if (!error && data) { 
-      setProdutos([...produtos, data[0]]); 
-      setNovoProduto({ nome: '', preco: '', estoque: '', opcoes: '', tipo: 'principal', idsAdicionaisPermitidos: [], categoria: 'Lanches', imagem_url: '', descricao: '' }); 
-    }
-  };
+  const resetarSistema = () => { if(confirm("ATENÇÃO: Isso vai apagar TODOS os dados e corrigir erros. Continuar?")) { localStorage.clear(); window.location.reload(); } }
 
   // CONTROLES
-  const abrirNovo = () => { setFormPedido({ id: null, nome: '', endereco: '', telefone: '', taxaEntrega: 0, desconto: 0, pagamento: 'Dinheiro', observacoes: '', itens: [{ produtoId: '', nome: '', qtd: 1, preco: 0, opcaoSelecionada: '', listaAdicionais: [] }] }); setModoPedido('cardapio'); setModalAberto(true); };
-  const abrirEdicao = (pedido) => { const itensClonados = (pedido.itens || []).map(item => ({...item, listaAdicionais: [...(item.listaAdicionais || [])]})); setFormPedido({ id: pedido.id, nome: pedido.cliente.nome, endereco: pedido.cliente.endereco, telefone: pedido.cliente.telefone, taxaEntrega: pedido.taxa_entrega || 0, desconto: pedido.desconto || 0, pagamento: pedido.pagamento || 'Dinheiro', observacoes: pedido.observacoes || '', itens: itensClonados }); setModoPedido('cardapio'); setModalAberto(true); };
+  const abrirNovo = () => { setFormPedido({ id: null, nome: '', endereco: '', telefone: '', taxaEntrega: 0, desconto: 0, pagamento: 'Dinheiro', observacoes: '', itens: [{ produtoId: '', nome: '', qtd: 1, preco: 0, opcaoSelecionada: '', listaAdicionais: [] }] }); setModalAberto(true); };
+  const abrirEdicao = (pedido) => { const itensClonados = (pedido.itens || []).map(item => ({...item, listaAdicionais: [...(item.listaAdicionais || [])]})); setFormPedido({ id: pedido.id, nome: pedido.cliente.nome, endereco: pedido.cliente.endereco, telefone: pedido.cliente.telefone, taxaEntrega: pedido.taxa_entrega || 0, desconto: pedido.desconto || 0, pagamento: pedido.pagamento || 'Dinheiro', observacoes: pedido.observacoes || '', itens: itensClonados }); setModalAberto(true); };
   const selecionarCliente = (id) => { const c = clientes.find(cli => cli.id == id); if (c) setFormPedido({ ...formPedido, nome: c.nome, endereco: c.endereco, telefone: c.telefone, taxaEntrega: c.taxa_fixa || 0 }); };
   const addLinhaItem = () => setFormPedido({ ...formPedido, itens: [...formPedido.itens, { produtoId: '', nome: '', qtd: 1, preco: 0, opcaoSelecionada: '', listaAdicionais: [] }] });
   const removeLinhaItem = (idx) => setFormPedido({ ...formPedido, itens: formPedido.itens.filter((_, i) => i !== idx) });
   const atualizaItem = (idx, campo, valor) => { const novosItems = formPedido.itens.map((item, i) => { if (i !== idx) return item; return { ...item, [campo]: valor }; }); setFormPedido({ ...formPedido, itens: novosItems }); };
-  
   const selecionaProd = (idx, idProd) => { const prod = produtos.find(p => p.id == idProd); const novosItems = formPedido.itens.map((item, i) => { if (i !== idx) return item; if (prod) { return { ...item, produtoId: idProd, nome: prod.nome, preco: prod.preco, opcaoSelecionada: (prod.opcoes ? prod.opcoes.split(',')[0].trim() : ''), listaAdicionais: [] }; } return item; }); setFormPedido({ ...formPedido, itens: novosItems }); };
   const toggleAdicional = (idxItem, idAdicional) => { const novosItems = formPedido.itens.map((item, i) => { if (i !== idxItem) return item; const listaAtual = item.listaAdicionais || []; let novaLista; if (listaAtual.includes(idAdicional)) { novaLista = listaAtual.filter(id => id !== idAdicional); } else { novaLista = [...listaAtual, idAdicional]; } return { ...item, listaAdicionais: novaLista }; }); setFormPedido({ ...formPedido, itens: novosItems }); };
   const toggleAdicionalNoCadastro = (idAdicional) => { const listaAtual = novoProduto.idsAdicionaisPermitidos || []; if (listaAtual.includes(idAdicional)) { setNovoProduto({ ...novoProduto, idsAdicionaisPermitidos: listaAtual.filter(id => id !== idAdicional) }); } else { setNovoProduto({ ...novoProduto, idsAdicionaisPermitidos: [...listaAtual, idAdicional] }); } };
-  
-  const toggleRecheioMontagem = (id) => { const jaTem = montagem.recheios.includes(id); if(jaTem) setMontagem({...montagem, recheios: montagem.recheios.filter(r => r !== id)}); else setMontagem({...montagem, recheios: [...montagem.recheios, id]}); };
-  const adicionarMontagemAoPedido = () => { if(!montagem.pao || !montagem.proteina) { alert("Selecione pelo menos o Pão e a Proteína."); return; } let precoTotal = 0; const partesDescricao = []; const pPao = produtos.find(p => p.id == montagem.pao); if(pPao) { precoTotal += pPao.preco; partesDescricao.push(`Pão: ${pPao.nome}`); } const pProt = produtos.find(p => p.id == montagem.proteina); if(pProt) { precoTotal += pProt.preco; partesDescricao.push(`Recheio: ${pProt.nome}`); } montagem.recheios.forEach(id => { const pRec = produtos.find(p => p.id == id); if(pRec) { precoTotal += pRec.preco; partesDescricao.push(`+ ${pRec.nome}`); } }); const itemMontado = { produtoId: 'montado_' + Date.now(), nome: 'DOG MONTADO', qtd: 1, preco: precoTotal, isMontado: true, detalhesMontagem: partesDescricao.join(', ') }; setFormPedido({...formPedido, itens: [...formPedido.itens, itemMontado]}); setModoPedido('cardapio'); setMontagem({ pao: null, proteina: null, recheios: [] }); };
   const handleSort = () => { if (dragItem.current === null || dragOverItem.current === null) return; let _produtos = [...produtos]; const draggedItemContent = _produtos.splice(dragItem.current, 1)[0]; _produtos.splice(dragOverItem.current, 0, draggedItemContent); dragItem.current = null; dragOverItem.current = null; setProdutos(_produtos); };
-  const concluirPedido = (id) => { const pedido = pedidos.find(p => p.id === id); if (!pedido) return; const novosProdutos = [...produtos]; pedido.itens.forEach(itemPedido => { const indexProd = novosProdutos.findIndex(p => p.id == itemPedido.produtoId); if (indexProd >= 0) novosProdutos[indexProd].estoque = (novosProdutos[indexProd].estoque || 0) - Number(itemPedido.qtd); const listaAdics = itemPedido.listaAdicionais || []; listaAdics.forEach(adId => { const indexAd = novosProdutos.findIndex(p => p.id == adId); if (indexAd >= 0) novosProdutos[indexAd].estoque = (novosProdutos[indexAd].estoque || 0) - Number(itemPedido.qtd); }); }); setProdutos(novosProdutos); atualizarStatusPedido(id, 'Concluido'); };
+  
 
   const pedidosPendentes = pedidos.filter(p => p.status === 'Pendente');
   const pedidosHistorico = pedidos.filter(p => (p.status === 'Concluido' || p.status === 'Cancelado') && (p.data === filtroData || (!p.data && filtroData === getDataHoje())));
   const totalVendasDia = pedidosHistorico.filter(p => p.status === 'Concluido').reduce((acc, p) => acc + (p.total || 0), 0);
-  const itensPrincipais = produtos.filter(p => p.tipo !== 'adicional');
-  const itensAdicionais = produtos.filter(p => p.tipo === 'adicional');
-  const categorias = [...new Set(itensPrincipais.map(p => p.categoria || 'Geral'))];
+  
+  
+  
 
   return (
     <div className="min-h-screen bg-amber-50 font-sans pb-20">
@@ -210,170 +375,98 @@ function App() {
                  <button onClick={() => setModalAberto(false)} className="hover:bg-white/20 p-1 rounded"><X size={24} /></button>
                </div>
 
-               {!formPedido.id && (
-                 <div className="flex bg-gray-100 border-b border-gray-200">
-                   <button onClick={() => setModoPedido('cardapio')} className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 ${modoPedido === 'cardapio' ? 'bg-white text-red-600 border-b-2 border-red-600' : 'text-gray-500'}`}><List size={16}/> Cardápio</button>
-                   <button onClick={() => setModoPedido('montar')} className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 ${modoPedido === 'montar' ? 'bg-white text-orange-600 border-b-2 border-orange-600' : 'text-gray-500'}`}><Layers size={16}/> Montar Dog 🛠️</button>
-                 </div>
-               )}
-
                <div className="p-6 overflow-y-auto flex-1">
                 
-                {/* CONTEÚDO DO MODO CARDÁPIO */}
-                {modoPedido === 'cardapio' && (
-                  <>
-                    {!formPedido.id && (
-                      <div className="mb-6 p-3 bg-blue-50 rounded-lg border border-blue-100">
-                        <label className="block text-xs font-bold text-blue-800 mb-1 uppercase">Já é cliente?</label>
-                        <select className="w-full border border-blue-300 rounded p-2 bg-white text-blue-900" onChange={(e) => selecionarCliente(e.target.value)} defaultValue=""><option value="">Selecione um cliente cadastrado...</option>{clientes.map(c => <option key={c.id} value={c.id}>{c.nome} - {c.endereco}</option>)}</select>
-                      </div>
-                    )}
-                    <div className="space-y-4">
-                      <div><label className="block text-sm font-bold text-gray-700 mb-1">Nome do Cliente</label><input required type="text" className="w-full border border-gray-300 rounded-lg p-2" value={formPedido.nome} onChange={(e) => setFormPedido({...formPedido, nome: e.target.value})} /></div>
-                      <div><label className="block text-sm font-bold text-gray-700 mb-1">Endereço</label><input required type="text" className="w-full border border-gray-300 rounded-lg p-2" value={formPedido.endereco} onChange={(e) => setFormPedido({...formPedido, endereco: e.target.value})} /></div>
-                      
-                      <div className="border-t pt-4 mt-4">
-                        <label className="block text-sm font-bold text-gray-700 mb-2">Itens do Pedido</label>
-                        {formPedido.itens.map((item, index) => {
-                          if (item.isMontado) {
-                            return (
-                              <div key={index} className="mb-4 pb-4 border-b border-orange-100 bg-orange-50 p-3 rounded-lg relative">
-                                <div className="flex justify-between items-start">
-                                  <div>
-                                    <div className="font-bold text-orange-800">🛠️ {item.nome}</div>
-                                    <div className="text-xs text-gray-600 mt-1 max-w-[200px]">{item.detalhesMontagem}</div>
-                                  </div>
-                                  <div className="text-right">
-                                    <div className="font-bold text-lg">R$ {item.preco.toFixed(2)}</div>
-                                    <button type="button" onClick={() => removeLinhaItem(index)} className="text-red-500 text-xs underline mt-2">Remover</button>
-                                  </div>
-                                </div>
-                              </div>
-                            )
-                          }
-                          
-                          const produtoPrincipal = produtos.find(p => p.id == item.produtoId);
-                          const idsPermitidos = produtoPrincipal?.ids_adicionais_permitidos || [];
-                          const adicionaisDisponiveis = produtos.filter(p => p.tipo === 'adicional' && idsPermitidos.includes(p.id));
-                          return (
-                            <div key={index} className="mb-4 pb-4 border-b border-gray-100 bg-gray-50 p-3 rounded-lg">
-                               <div className="flex gap-2 items-end mb-2">
-                                <div className="w-16"><label className="text-xs text-gray-500">Qtd</label><input type="number" min="1" className="w-full border border-gray-300 rounded p-2 text-center" value={item.qtd} onChange={(e) => atualizaItem(index, 'qtd', e.target.value)} /></div>
-                                <div className="flex-1"><label className="text-xs text-gray-500">Produto</label><select className="w-full border border-gray-300 rounded p-2 bg-white" value={item.produtoId} onChange={(e) => selecionaProd(index, e.target.value)} required><option value="">Selecione...</option>{produtos.filter(p => p.tipo === 'principal').map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}</select></div>
-                                <div className="w-24"><label className="text-xs text-gray-500">Preço (R$)</label><input type="number" step="0.50" className="w-full border border-gray-300 bg-white rounded p-2" value={item.preco} onChange={(e) => atualizaItem(index, 'preco', e.target.value)} /></div>
-                                {formPedido.itens.length > 1 && (<button type="button" onClick={() => removeLinhaItem(index)} className="bg-red-100 text-red-600 p-2 rounded mb-[1px] hover:bg-red-200"><Trash2 size={20} /></button>)}
-                              </div>
-                               {item.produtoId && produtos.find(p => p.id == item.produtoId)?.opcoes && (
-                                <div className="mt-2 pl-2 border-l-2 border-orange-200 mb-2">
-                                   <label className="block text-xs font-bold text-gray-600 mb-1">Opção do Lanche:</label>
-                                   <select className="w-full border border-orange-200 bg-orange-50 rounded p-2 text-sm text-orange-900" value={item.opcaoSelecionada} onChange={(e) => atualizaItem(index, 'opcaoSelecionada', e.target.value)}>
-                                     {produtos.find(p => p.id == item.produtoId).opcoes.split(',').map((op, i) => {
-                                       const nome = extrairNomeOpcao(op);
-                                       const val = extrairValorOpcao(op);
-                                       return <option key={i} value={op.trim()}>{nome} {val > 0 ? `(+ R$ ${val.toFixed(2)})` : ''}</option>;
-                                     })}
-                                   </select>
-                                </div>
-                              )}
-                              {item.produtoId && adicionaisDisponiveis.length > 0 && (
-                                <div className="mt-2 pl-2 border-l-2 border-yellow-300">
-                                   <span className="block text-xs font-bold text-gray-600 mb-1">Adicionais Disponíveis:</span>
-                                   <div className="grid grid-cols-2 gap-2">
-                                     {adicionaisDisponiveis.map(ad => (
-                                       <label key={ad.id} className={`flex items-center gap-2 text-sm p-1 rounded cursor-pointer border ${item.listaAdicionais?.includes(ad.id) ? 'bg-yellow-100 border-yellow-300' : 'bg-white border-gray-100'}`}>
-                                         <input type="checkbox" className="text-red-600 rounded" checked={item.listaAdicionais?.includes(ad.id) || false} onChange={() => toggleAdicional(index, ad.id)} />
-                                         <span className="flex-1">{ad.nome}</span>
-                                         <span className="font-bold text-green-700">{ad.preco > 0 ? `+R$${ad.preco.toFixed(2)}` : 'Grátis'}</span>
-                                       </label>
-                                     ))}
-                                   </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                        <button type="button" onClick={addLinhaItem} className="text-sm text-red-600 font-bold flex items-center gap-1 mt-2 hover:underline"><Plus size={16} /> Adicionar item</button>
-                      </div>
-                      <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 mt-4">
-                         <div className="flex gap-2 items-end">
-                            <div className="flex-1">
-                               <label className="block text-sm font-bold text-gray-700 mb-1 flex items-center gap-2"><Bike size={18}/> Taxa de Entrega</label>
-                               <select className="w-full border border-gray-300 rounded p-2 bg-white text-sm" onChange={(e) => setFormPedido({...formPedido, taxaEntrega: e.target.value})} value={taxasFrete.some(t => t.valor == formPedido.taxaEntrega) ? formPedido.taxaEntrega : ''}><option value="0">Sem Frete</option>{taxasFrete.map(t => <option key={t.id} value={t.valor}>{t.nome}</option>)}<option value="">Outro</option></select>
-                            </div>
-                            <div className="w-24">
-                               <label className="block text-xs text-gray-500 mb-1">Valor (R$)</label>
-                               <input type="number" step="0.50" className="w-full border border-gray-300 rounded p-2 font-bold text-gray-800" value={formPedido.taxaEntrega} onChange={(e) => setFormPedido({...formPedido, taxaEntrega: e.target.value})} />
-                            </div>
-                         </div>
-                      </div>
-                      <div className="mt-4 flex gap-4">
-                        <div className="flex-1"><label className="block text-sm font-bold text-gray-700 mb-1 flex items-center gap-2"><CreditCard size={18}/> Forma de Pagamento</label><select className="w-full border border-gray-300 rounded-lg p-2 bg-white" value={formPedido.pagamento} onChange={(e) => setFormPedido({...formPedido, pagamento: e.target.value})}><option value="Dinheiro">Dinheiro</option><option value="PIX">PIX</option><option value="Cartão de Crédito">Cartão de Crédito</option><option value="Cartão de Débito">Cartão de Débito</option></select></div>
-                        <div className="w-32"><label className="block text-sm font-bold text-gray-700 mb-1 flex items-center gap-2"><Percent size={18}/> Desconto (%)</label><input type="number" className="w-full border border-gray-300 rounded-lg p-2 text-red-600 font-bold" value={formPedido.desconto} onChange={(e) => setFormPedido({...formPedido, desconto: e.target.value})} placeholder="0" /></div>
-                      </div>
-                      <div className="mt-4"><label className="block text-sm font-bold text-gray-700 mb-1 flex items-center gap-2"><FileText size={18}/> Observações do Pedido</label><textarea className="w-full border border-gray-300 rounded-lg p-2 h-20" value={formPedido.observacoes} onChange={(e) => setFormPedido({...formPedido, observacoes: e.target.value})} placeholder="Ex: Vinagrete de Repolho, Sem Cebola..." /></div>
-                      
-                      {/* TOTALIZADORES DO PEDIDO */}
-                      <div className="mt-6 flex items-center justify-between border-t pt-4">
-                       <div className="flex flex-col">
-                         <span className="text-xs text-gray-500">Subtotal: R$ {calcularTotalGeral(formPedido.itens, 0, 0).toFixed(2)}</span>
-                         <span className="text-xs text-red-500 font-bold">Desc: - R$ {(calcularTotalGeral(formPedido.itens, 0, 0) * (formPedido.desconto/100)).toFixed(2)}</span>
-                         <span className="text-xs text-gray-500">Frete: + R$ {Number(formPedido.taxaEntrega).toFixed(2)}</span>
-                         <div className="text-2xl font-bold text-gray-800 mt-1">Total: R$ {calcularTotalGeral(formPedido.itens, formPedido.taxaEntrega, formPedido.desconto).toFixed(2)}</div>
-                       </div>
-                       <button type="submit" className={`px-6 py-3 rounded-lg font-bold shadow-md transition text-white ${formPedido.id ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}>{formPedido.id ? 'Salvar' : 'Lançar Pedido'}</button>
+                  {!formPedido.id && (
+                    <div className="mb-6 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                      <label className="block text-xs font-bold text-blue-800 mb-1 uppercase">Já é cliente?</label>
+                      <select className="w-full border border-blue-300 rounded p-2 bg-white text-blue-900" onChange={(e) => selecionarCliente(e.target.value)} defaultValue=""><option value="">Selecione um cliente cadastrado...</option>{clientes.map(c => <option key={c.id} value={c.id}>{c.nome} - {c.endereco}</option>)}</select>
                     </div>
-                  </>
-                )}
-                
-                {/* CONTEÚDO DO MODO MONTAGEM */}
-                {modoPedido === 'montar' && (
-                   <div className="space-y-6">
-                      <div className="bg-orange-50 border border-orange-200 p-4 rounded-lg mb-4">
-                         <h3 className="font-bold text-orange-800 mb-2 flex items-center gap-2"><Utensils size={18}/> 1. Escolha o Pão</h3>
-                         <div className="grid grid-cols-2 gap-2">
-                            {produtos.filter(p => p.categoria === 'Pães').map(p => (
-                               <label key={p.id} className={`border p-2 rounded cursor-pointer flex flex-col items-center text-center transition ${montagem.pao === p.id ? 'bg-orange-200 border-orange-400 ring-2 ring-orange-400' : 'bg-white border-orange-100 hover:bg-orange-50'}`}>
-                                  <input type="radio" name="pao" className="hidden" checked={montagem.pao === p.id} onChange={() => setMontagem({...montagem, pao: p.id})} />
-                                  <span className="font-bold text-sm">{p.nome}</span>
-                                  <span className="text-xs text-gray-500">R$ {p.preco.toFixed(2)}</span>
-                               </label>
-                            ))}
-                         </div>
-                      </div>
+                  )}
+                  <div className="space-y-4">
+                    <div><label className="block text-sm font-bold text-gray-700 mb-1">Nome do Cliente</label><input required type="text" className="w-full border border-gray-300 rounded-lg p-2" value={formPedido.nome} onChange={(e) => setFormPedido({...formPedido, nome: e.target.value})} /></div>
+                    <div><label className="block text-sm font-bold text-gray-700 mb-1">Endereço</label><input required type="text" className="w-full border border-gray-300 rounded-lg p-2" value={formPedido.endereco} onChange={(e) => setFormPedido({...formPedido, endereco: e.target.value})} /></div>
+                    
+                    <div className="border-t pt-4 mt-4">
+                      <label className="block text-sm font-bold text-gray-700 mb-2">Itens do Pedido</label>
+                      {formPedido.itens.map((item, index) => {
+                        const produtoPrincipal = produtos.find(p => p.id == item.produtoId);
+                        const idsPermitidos = produtoPrincipal?.ids_adicionais_permitidos || [];
+                        const adicionaisDisponiveis = produtos.filter(p => p.tipo === 'adicional' && idsPermitidos.includes(p.id));
 
-                      <div className="bg-red-50 border border-red-200 p-4 rounded-lg mb-4">
-                         <h3 className="font-bold text-red-800 mb-2 flex items-center gap-2"><Utensils size={18}/> 2. Escolha a Proteína (Salsicha)</h3>
-                         <div className="grid grid-cols-2 gap-2">
-                            {produtos.filter(p => p.categoria === 'Proteínas').map(p => (
-                               <label key={p.id} className={`border p-2 rounded cursor-pointer flex flex-col items-center text-center transition ${montagem.proteina === p.id ? 'bg-red-200 border-red-400 ring-2 ring-red-400' : 'bg-white border-red-100 hover:bg-red-50'}`}>
-                                  <input type="radio" name="proteina" className="hidden" checked={montagem.proteina === p.id} onChange={() => setMontagem({...montagem, proteina: p.id})} />
-                                  <span className="font-bold text-sm">{p.nome}</span>
-                                  <span className="text-xs text-gray-500">R$ {p.preco.toFixed(2)}</span>
-                               </label>
-                            ))}
-                         </div>
+                        return (
+                          <div key={index} className="mb-4 pb-4 border-b border-gray-100 bg-gray-50 p-3 rounded-lg">
+                            <div className="flex gap-2 items-end mb-2">
+                              <div className="w-16"><label className="text-xs text-gray-500">Qtd</label><input type="number" min="1" className="w-full border border-gray-300 rounded p-2 text-center" value={item.qtd} onChange={(e) => atualizaItem(index, 'qtd', e.target.value)} /></div>
+                              <div className="flex-1"><label className="text-xs text-gray-500">Produto</label><select className="w-full border border-gray-300 rounded p-2 bg-white" value={item.produtoId} onChange={(e) => selecionaProd(index, e.target.value)} required><option value="">Selecione...</option>{produtos.filter(p => p.tipo === 'principal').map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}</select></div>
+                              <div className="w-24"><label className="text-xs text-gray-500">Preço (R$)</label><input type="number" step="0.50" className="w-full border border-gray-300 bg-white rounded p-2" value={item.preco} onChange={(e) => atualizaItem(index, 'preco', e.target.value)} /></div>
+                              {formPedido.itens.length > 1 && (<button type="button" onClick={() => removeLinhaItem(index)} className="bg-red-100 text-red-600 p-2 rounded mb-[1px] hover:bg-red-200"><Trash2 size={20} /></button>)}
+                            </div>
+                            
+                            {item.produtoId && produtos.find(p => p.id == item.produtoId)?.opcoes && (
+                              <div className="mt-2 pl-2 border-l-2 border-orange-200 mb-2">
+                                <label className="block text-xs font-bold text-gray-600 mb-1">Opção do Lanche:</label>
+                                <select className="w-full border border-orange-200 bg-orange-50 rounded p-2 text-sm text-orange-900" value={item.opcaoSelecionada} onChange={(e) => atualizaItem(index, 'opcaoSelecionada', e.target.value)}>
+                                  {produtos.find(p => p.id == item.produtoId).opcoes.split(',').map((op, i) => {
+                                    const nome = extrairNomeOpcao(op);
+                                    const val = extrairValorOpcao(op);
+                                    return <option key={i} value={op.trim()}>{nome} {val > 0 ? `(+ R$ ${val.toFixed(2)})` : ''}</option>;
+                                  })}
+                                </select>
+                              </div>
+                            )}
+                            
+                            {item.produtoId && adicionaisDisponiveis.length > 0 && (
+                              <div className="mt-2 pl-2 border-l-2 border-yellow-300">
+                                <span className="block text-xs font-bold text-gray-600 mb-1">Adicionais Disponíveis:</span>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {adicionaisDisponiveis.map(ad => (
+                                    <label key={ad.id} className={`flex items-center gap-2 text-sm p-1 rounded cursor-pointer border ${item.listaAdicionais?.includes(ad.id) ? 'bg-yellow-100 border-yellow-300' : 'bg-white border-gray-100'}`}>
+                                      <input 
+                                        type="checkbox" 
+                                        className="text-red-600 rounded"
+                                        checked={item.listaAdicionais?.includes(ad.id) || false}
+                                        onChange={() => toggleAdicional(index, ad.id)}
+                                      />
+                                      <span className="flex-1">{ad.nome}</span>
+                                      <span className="font-bold text-green-700">{ad.preco > 0 ? `+R$${ad.preco.toFixed(2)}` : 'Grátis'}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      <button type="button" onClick={addLinhaItem} className="text-sm text-red-600 font-bold flex items-center gap-1 mt-2 hover:underline"><Plus size={16} /> Adicionar item</button>
+                    </div>
+                    <div className="bg-gray-50 p-2 rounded border border-gray-200 mt-4 flex items-center gap-2">
+                      <div className="flex-1">
+                          <label className="text-xs font-bold text-gray-600">Taxa Entrega</label>
+                          <select className="w-full text-sm p-1 border rounded" onChange={(e) => setFormPedido({...formPedido, taxaEntrega: e.target.value})} value={taxasFrete.some(t => t.valor == formPedido.taxaEntrega) ? formPedido.taxaEntrega : ''}><option value="0">Sem Frete</option>{taxasFrete.map(t => <option key={t.id} value={t.valor}>{t.nome}</option>)}<option value="">Outro</option></select>
                       </div>
-
-                      <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg mb-4">
-                         <h3 className="font-bold text-yellow-800 mb-2 flex items-center gap-2"><List size={18}/> 3. Recheios e Adicionais</h3>
-                         <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto">
-                            {produtos.filter(p => p.categoria === 'Recheios' || p.categoria === 'Lanches' || p.tipo === 'adicional').map(p => (
-                               <label key={p.id} className={`border p-2 rounded cursor-pointer flex items-center gap-2 transition ${montagem.recheios.includes(p.id) ? 'bg-yellow-100 border-yellow-400' : 'bg-white border-yellow-100'}`}>
-                                  <input type="checkbox" className="rounded text-yellow-600" checked={montagem.recheios.includes(p.id)} onChange={() => toggleRecheioMontagem(p.id)} />
-                                  <div className="flex flex-col">
-                                     <span className="text-sm font-bold">{p.nome}</span>
-                                     <span className="text-xs text-gray-500">+ R$ {p.preco.toFixed(2)}</span>
-                                  </div>
-                               </label>
-                            ))}
-                         </div>
+                      <div className="w-24">
+                          <label className="text-xs font-bold text-gray-600">Valor</label>
+                          <input type="number" step="0.50" className="w-full text-sm p-1 border rounded font-bold" value={formPedido.taxaEntrega} onChange={(e) => setFormPedido({...formPedido, taxaEntrega: e.target.value})} />
                       </div>
-                      
-                      <button type="button" onClick={adicionarMontagemAoPedido} className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold shadow-md text-lg">Adicionar ao Pedido</button>
-                   </div>
-                )}
+                    </div>
+                    <div className="mt-4 flex gap-4">
+                      <div className="flex-1"><label className="block text-sm font-bold text-gray-700 mb-1 flex items-center gap-2"><CreditCard size={18}/> Forma de Pagamento</label><select className="w-full border border-gray-300 rounded-lg p-2 bg-white" value={formPedido.pagamento} onChange={(e) => setFormPedido({...formPedido, pagamento: e.target.value})}><option value="Dinheiro">Dinheiro</option><option value="PIX">PIX</option><option value="Cartão de Crédito">Cartão de Crédito</option><option value="Cartão de Débito">Cartão de Débito</option></select></div>
+                      <div className="w-32"><label className="block text-sm font-bold text-gray-700 mb-1 flex items-center gap-2"><Percent size={18}/> Desconto (%)</label><input type="number" className="w-full border border-gray-300 rounded-lg p-2 text-red-600 font-bold" value={formPedido.desconto} onChange={(e) => setFormPedido({...formPedido, desconto: e.target.value})} placeholder="0" /></div>
+                    </div>
+                    <div className="mt-4"><label className="block text-sm font-bold text-gray-700 mb-1 flex items-center gap-2"><FileText size={18}/> Observações do Pedido</label><textarea className="w-full border border-gray-300 rounded-lg p-2 h-20" value={formPedido.observacoes} onChange={(e) => setFormPedido({...formPedido, observacoes: e.target.value})} placeholder="Ex: Vinagrete de Repolho, Sem Cebola..." /></div>
+                    
+                    <div className="mt-6 flex items-center justify-between border-t pt-4">
+                      <div className="flex flex-col">
+                        <span className="text-xs text-gray-500">Subtotal: R$ {calcularTotalGeral(formPedido.itens, 0, 0).toFixed(2)}</span>
+                        <span className="text-xs text-red-500 font-bold">Desc: - R$ {(calcularTotalGeral(formPedido.itens, 0, 0) * (formPedido.desconto/100)).toFixed(2)}</span>
+                        <span className="text-xs text-gray-500">Frete: + R$ {Number(formPedido.taxaEntrega).toFixed(2)}</span>
+                        <div className="text-2xl font-bold text-gray-800 mt-1">Total: R$ {calcularTotalGeral(formPedido.itens, formPedido.taxaEntrega, formPedido.desconto).toFixed(2)}</div>
+                      </div>
+                      <button type="button" onClick={salvarPedido} className={`px-6 py-3 rounded-lg font-bold shadow-md transition text-white ${formPedido.id ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}>{formPedido.id ? 'Salvar' : 'Lançar Pedido'}</button>
+                  </div>
+                </div>
                </div>
-               </form>
             </div>
           </div>
         )}
@@ -403,14 +496,6 @@ function App() {
                     </div>
                     <div className="bg-amber-50 p-3 rounded-lg border border-amber-100 mb-5">
                       {(pedido.itens || []).map((item, i) => {
-                         if(item.isMontado) {
-                             return (
-                                <div key={i} className="flex flex-col justify-between text-sm text-gray-800 py-1 border-b border-amber-200/50 last:border-0">
-                                  <div className="flex justify-between"><span><span className="text-red-600 font-bold">{item.qtd}x</span> {item.nome}</span><span className="text-gray-500 text-xs">({Number(item.preco).toFixed(2)})</span></div>
-                                  <div className="text-xs text-gray-500 pl-4">{item.detalhesMontagem}</div>
-                                </div>
-                             )
-                         }
                         const adics = (item.listaAdicionais || []).map(id => produtos.find(p => p.id === id)?.nome).filter(Boolean);
                         const valorOpcao = extrairValorOpcao(item.opcaoSelecionada);
                         const nomeOpcao = extrairNomeOpcao(item.opcaoSelecionada);
@@ -480,10 +565,8 @@ function App() {
                    <>
                     <div><label className="block text-sm font-bold text-gray-700 mb-1">Categoria</label><select className="w-full border border-gray-300 rounded-lg p-2 bg-white" value={novoProduto.categoria} onChange={(e) => setNovoProduto({...novoProduto, categoria: e.target.value})}><option value="Lanches">Lanches</option><option value="Bebidas">Bebidas</option><option value="Combos">Combos</option><option value="Sobremesas">Sobremesas</option><option value="Pães">Pães (Montagem)</option><option value="Proteínas">Proteínas (Montagem)</option><option value="Recheios">Recheios (Montagem)</option><option value="Outros">Outros</option></select></div>
                     <div><label className="block text-sm font-bold text-gray-700 mb-1 flex items-center gap-2"><List size={16}/> Opções (Ex: Molho=+2.00)</label><input type="text" className="w-full border border-gray-300 rounded-lg p-2" value={novoProduto.opcoes} onChange={(e) => setNovoProduto({...novoProduto, opcoes: e.target.value})} placeholder="Ex: Vinagrete, Cheddar=+2.00" /></div>
-                    {/* NOVO: Campos para Cardápio Digital */}
                     <div><label className="block text-sm font-bold text-gray-700 mb-1">URL da Imagem (Opcional)</label><input type="text" className="w-full border border-gray-300 rounded-lg p-2" value={novoProduto.imagem_url} onChange={(e) => setNovoProduto({...novoProduto, imagem_url: e.target.value})} placeholder="https://..." /></div>
                     <div><label className="block text-sm font-bold text-gray-700 mb-1">Descrição Detalhada (Opcional)</label><textarea className="w-full border border-gray-300 rounded-lg p-2" value={novoProduto.descricao} onChange={(e) => setNovoProduto({...novoProduto, descricao: e.target.value})} placeholder="Pão brioche, carne 150g..." /></div>
-                    
                     <div className="mt-4 border-t pt-4">
                       <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2"><Link size={16}/> Quais adicionais este item aceita?</label>
                       <div className="max-h-40 overflow-y-auto border border-gray-200 rounded p-2 bg-gray-50">
@@ -498,7 +581,6 @@ function App() {
                  <button type="submit" className="w-full bg-gray-900 hover:bg-black text-white py-3 rounded-lg font-bold transition">Salvar Item</button>
                </form>
              </div>
-
              <div className="md:col-span-2 bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
                <div className="bg-gray-50 p-4 border-b border-gray-200"><h2 className="text-lg font-bold text-gray-700 flex items-center gap-2"><ClipboardList size={20}/> Cadastro Geral</h2>
                  <div className="flex gap-2 mt-2">
@@ -548,11 +630,7 @@ function App() {
         {abaAtiva === 'config' && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200 h-fit"><h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2"><Bike size={20} className="text-red-600"/> Nova Taxa</h2><form onSubmit={salvarTaxa} className="space-y-4"><div><label className="block text-sm font-bold text-gray-700 mb-1">Descrição</label><input required type="text" className="w-full border border-gray-300 rounded-lg p-2" value={novaTaxa.nome} onChange={(e) => setNovaTaxa({...novaTaxa, nome: e.target.value})} /></div><div><label className="block text-sm font-bold text-gray-700 mb-1">Valor</label><input required type="number" step="0.50" className="w-full border border-gray-300 rounded-lg p-2" value={novaTaxa.valor} onChange={(e) => setNovaTaxa({...novaTaxa, valor: e.target.value})} /></div><button type="submit" className="w-full bg-gray-900 hover:bg-black text-white py-3 rounded-lg font-bold transition">Salvar</button></form></div>
-            <div className="md:col-span-2 bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden"><div className="bg-gray-50 p-4 border-b border-gray-200"><h2 className="text-lg font-bold text-gray-700 flex items-center gap-2"><Settings size={20}/> Configurações Gerais</h2></div>
-              <div className="p-4 bg-blue-50 flex gap-4 mb-4 border-b border-blue-100">
-                 <div className="flex-1"><label className="block text-xs font-bold text-blue-800 mb-1">Tempo Preparo Padrão (min)</label><input type="number" className="w-full border border-blue-300 rounded p-2" value={configTempos.preparo} onChange={(e) => setConfigTempos({...configTempos, preparo: e.target.value})} /></div>
-                 <div className="flex-1"><label className="block text-xs font-bold text-blue-800 mb-1">Tempo Trajeto Padrão (min)</label><input type="number" className="w-full border border-blue-300 rounded p-2" value={configTempos.deslocamento} onChange={(e) => setConfigTempos({...configTempos, deslocamento: e.target.value})} /></div>
-              </div>
+            <div className="md:col-span-2 bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden"><div className="bg-gray-50 p-4 border-b border-gray-200"><h2 className="text-lg font-bold text-gray-700 flex items-center gap-2"><Settings size={20}/> Tabela de Fretes</h2></div>
               <div className="overflow-x-auto"><table className="w-full text-left"><thead className="bg-gray-100 text-gray-600 text-sm uppercase"><tr><th className="p-4">Descrição</th><th className="p-4">Valor</th><th className="p-4 text-right">Ações</th></tr></thead><tbody className="divide-y divide-gray-100">{taxasFrete.map((taxa) => (<tr key={taxa.id} className="hover:bg-gray-50 transition"><td className="p-4 font-medium text-gray-800"><input type="text" value={taxa.nome} onChange={(e) => atualizarTaxaNaLista(taxa.id, 'nome', e.target.value)} className="bg-transparent hover:border-gray-300 focus:bg-white rounded px-2 py-1 w-full outline-none transition"/></td><td className="p-4 text-green-600 font-bold"><input type="number" step="0.50" value={taxa.valor} onChange={(e) => atualizarTaxaNaLista(taxa.id, 'valor', e.target.value)} className="bg-transparent hover:border-gray-300 focus:bg-white rounded px-2 py-1 w-24 outline-none transition"/></td><td className="p-4 text-right"><button onClick={() => deletarTaxa(taxa.id)} className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded transition"><Trash2 size={18} /></button></td></tr>))}</tbody></table></div></div>
           </div>
         )}
